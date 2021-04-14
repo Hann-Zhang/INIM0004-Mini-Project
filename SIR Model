@@ -1,0 +1,206 @@
+from scipy.interpolate import interp1d
+import numpy as np
+import math
+
+p_Sympt_to_Hosp = [ 0,0.085296804,0.092785388,0.092054795,0.087671233,0.081461187,0.074520548,0.067214612,0.059543379,0.05260274,0.046392694,0.040182648,0.035068493,0.029954338,0.025570776,0.021917808,0.018630137,0.015707763,0.013150685,0.011324201,0.00913242,0.007671233,0.006575342,0.005479452,0.004383562,0.003652968,0.003287671,0.002557078,0.002191781,0.001461187,0.001461187,0.00109589,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ]
+p_Hosp_to_Death = [0,0.04549675,0.082822656,0.086350975,0.095821727,0.093779016,0.082265552,0.068895079,0.057381616,0.051624884,0.041225627,0.034911792,0.028783658,0.024698236,0.021912721,0.018941504,0.01634169,0.016155989,0.01281337,0.010399257,0.010584958,0.008542247,0.006685237,0.007428041,0.005942433,0.005942433,0.006128134,0.005013928,0.004828227,0.003528319,0.004271123,0.002971216,0.002042711,0.002414113,0.002042711,0.00185701,0.002414113,0.00185701,0.002785515,0.001299907,0.001114206,0.001485608,0.001671309,0.00185701,0.001671309,0.001114206,0.000742804,0.001485608,0.001114206,0.000557103,0.000742804,0.000742804,0.000371402,0.000928505,0.000557103,0.000742804,0.000742804,0.000742804,0.000742804,0.001114206,0.000557103,0]
+p_Sympt_to_ICU = [0,0.033450361,0.049200312,0.059440218,0.065925492,0.069387556,0.070460308,0.069582602,0.067144529,0.063779988,0.059440218,0.054515311,0.049395358,0.044226643,0.039155452,0.034230544,0.029695728,0.02540472,0.021650088,0.018236786,0.015213575,0.012677979,0.010337429,0.008484494,0.006924127,0.005656329,0.004486054,0.003608348,0.002828165,0.00234055,0.001755413,0.001365321,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+p_Hosp_to_Discharge = [ 0,0.062385321,0.082568807,0.088073394,0.08440367,0.078899083,0.075229358,0.064220183,0.060550459,0.056880734,0.047706422,0.036697248,0.034862385,0.027522936,0.022018349,0.025688073,0.014678899,0.018348624,0.014678899,0.011009174,0.011009174,0.011009174,0.00733945,0.00733945,0.003669725,0.005504587,0.005504587,0.001834862,0.003669725,0.003669725,0.003669725,0.003669725,0.003669725,0.001834862,0.001834862,0.001834862,0,0.003669725,0,0.001834862,0.001834862,0,0.001834862,0,9.94235E-17,0.001834862,0,0,0.001834862,0,0,0,0,0.001834862,1.24367E-15,0,0.001834862,0,0,0,0,0]
+p_ICU_to_Discharge =[ 0,0.025205037,0.074500904,0.063729689,0.070910499,0.062832088,0.05744648,0.044880063,0.051163272,0.039494455,0.032313645,0.03590405,0.032313645,0.026928038,0.023337633,0.026030436,0.022440031,0.015259221,0.022440031,0.017952025,0.019747228,0.012566418,0.012566418,0.013464019,0.01436162,0.011668816,0.012566418,0.006283209,0.009873614,0.008976013,0.008976013,0.008976013,0.005385608,0.008976013,0.008976013,0.00718081,0.005385608,0.008976013,0.003590405,0.005385608,0.005385608,0.003590405,0.003590405,0.006283209,0.006283209,0.005385608,0.001795203,0.004488006,0.003590405,0.000897601,0.002692804,0.004488006,0,0.003590405,0.001795203,0.000897601,0.002692804,0,0.002692804,0.000897601,0,0]
+
+n = 62
+
+# calculate combined transition time
+# from Symptom to death / hosp discharge / icu discharge
+
+p_Sympt_to_Death = [0,]*n*2
+for i in range(n):
+    for j in range(n):
+        p_Sympt_to_Death[i+j] += p_Sympt_to_Hosp[i]*p_Hosp_to_Death[j]
+
+p_Sympt_to_ICU_to_Discharge = [0,]*n*2
+for i in range(n):
+    for j in range(n):
+        p_Sympt_to_ICU_to_Discharge[i+j] += p_Sympt_to_ICU[i]*p_ICU_to_Discharge[j]
+
+p_Sympt_to_Hosp_to_Discharge = [0,]*n*2
+for i in range(n):
+    for j in range(n):
+        p_Sympt_to_Hosp_to_Discharge[i+j] += p_Sympt_to_Hosp[i]*p_Hosp_to_Discharge[j]
+
+# store results for use in transform_cI
+
+death_distribution = {"t": range(len(p_Sympt_to_Death)), "p": p_Sympt_to_Death}
+hosp_adm_distribution = {"t": range(len(p_Sympt_to_Hosp)), "p": p_Sympt_to_Hosp}
+hosp_discharge_distribution = {"t": range(len(p_Sympt_to_Hosp_to_Discharge)), "p": p_Sympt_to_Hosp_to_Discharge}
+icu_adm_distribution = {"t": range(len(p_Sympt_to_ICU)), "p": p_Sympt_to_ICU}
+icu_discharge_distribution = {"t": range(len(p_Sympt_to_ICU_to_Discharge)), "p": p_Sympt_to_ICU_to_Discharge}
+
+
+def get_cases(t_obs, 
+              cI_obs, 
+              period = 1 # e.g. daily cases  = 1
+                         #      weekly cases = 7
+             ):
+    
+    # calc number of observation
+    n_obs = len(t_obs)
+    # create array to store cases by day
+    C_obs = np.zeros(n_obs)
+
+    # use function interp1d to allow
+    # us to interpolate cumulative infectious level at 
+    # any timepoint using simulation results
+    fcI = interp1d(t_obs, cI_obs)
+    
+    # loop over observations
+    for i in range(len(t_obs)):
+        ti = t_obs[i]
+        if ti < t_obs[0] + period:
+            C_obs[i] = 0 # undefined
+        else:
+            C_obs[i] = fcI(ti ) - fcI(ti  - period)
+    
+    return C_obs
+
+def transform_cI(t_obs, 
+                 cI_obs, 
+                 delay_dist = 0,   # delay or delay distribution
+                 frac = 1,         # scale factor
+                ):
+    
+    # function transforms cI in two stages
+    # scales cI to cJ by factor frac or frac_fn
+    # shifts cJ to cK using delay or delay distribution 
+    
+    # set delay distribution
+    # allow single delay value (defaults to delay=0)
+    if isinstance(delay_dist, float) or isinstance(delay_dist, int):
+        t_dist = [delay_dist,]
+        p_dist = [1,]
+    else:  
+        t_dist = delay_dist['t']
+        p_dist = delay_dist['p']
+    
+    # set up frac_fn scaling fraction 
+    # this allows frac to be a time dependent function
+    if not callable(frac):
+        frac_fn = lambda t: frac
+    else:
+        frac_fn = frac
+    
+    # calc number of observation
+    n_obs = len(t_obs)
+    
+    # stage 1 - scale cI to cJ
+    
+    # create array to store transformed results
+    cJ_obs = np.zeros(n_obs)
+    
+    # transform, allowing time variable fraction function
+    cJ_obs[0] = 0    
+    for i in range(1,len(t_obs)):
+        cJ_obs[i] = cJ_obs[i-1] + (cI_obs[i]-cI_obs[i-1])*frac_fn(t_obs[i])
+    
+    # use function interp1d to allow
+    # us to interpolate results at 
+    # any timepoint 
+    fcJ = interp1d(t_obs, cJ_obs)    
+    
+
+    # stage 2 - map cJ to cK using delay/distribution
+    
+    # create array to store transformed results
+    K_obs = np.zeros(n_obs)
+
+    for i in range(len(t_obs)):
+        ti = t_obs[i]
+        for j in range(len(t_dist)):
+            delay = t_dist[j]
+            p = p_dist[j]
+            if (ti-delay) > t_obs[0]:
+                K_obs[i] += p*fcJ(ti-delay)
+    return K_obs
+
+
+def get_deaths(t_obs, 
+               cI_obs,
+               period = 1,    # defaults to deaths/day
+               delay_dist=0,  # delay distribution
+               frac=1,        # mortality fraction
+              ):
+    # calculate cumulative deaths
+    cD_obs = transform_cI(t_obs, cI_obs, delay_dist, frac)
+    # calculate death counts (e.g. daily/weekly) over period
+    D_obs = get_cases(t_obs, cD_obs, period=period)
+    return D_obs
+    
+    
+# SIR model
+# System variables: S, I, R
+# model parameters: rzero, Ti
+from scipy.interpolate import interp1d
+import numpy as np
+import math
+
+import numpy as np
+import math 
+import matplotlib.pyplot as plt
+from scipy.integrate import odeint
+
+
+def sdot_SIR(s,t,params):
+    
+    S,I,R = s
+    rzero,Ti = params
+    
+    dS = -I*rzero*S/Ti
+    dI = (I/Ti)*(rzero*S-1)
+    dR = I/Ti
+    
+    ds = [dS,dI,dR]
+    return ds
+
+t_max=30
+t_obs=np.linspace(0,t_max,1000)
+
+rzero = 2.9
+Ti = 16
+params=[rzero,Ti]
+
+N=56000000
+I0= 800/N
+R0= 0
+S0= 1 - I0 - R0
+s0=[S0,I0,R0]
+
+s_obs=odeint(sdot_SIR,s0,t_obs,args=(params,))
+
+S_obs = s_obs[:,0]
+I_obs = s_obs[:,1]
+R_obs = s_obs[:,2]
+
+risk_D = 0.015
+risk_H = 0.01
+risk_ICU = 0.0138
+
+cI_obs = S_obs[0] - S_obs
+
+C_obs = N*get_cases(t_obs,cI_obs,period=1)
+D_obs = N*get_deaths(t_obs,cI_obs,period=1,delay_dist=death_distribution,frac=risk_D)
+
+cD_obs = N*transform_cI(t_obs,cI_obs,delay_dist=death_distribution,frac=risk_D)
+H_adm_obs = N*transform_cI(t_obs,cI_obs,delay_dist=icu_adm_distribution, frac=risk_H)
+H_discharge_obs = N*transform_cI(t_obs,cI_obs,delay_dist=hosp_discharge_distribution,frac=risk_H)
+H_obs = H_adm_obs - H_discharge_obs
+
+ICU_adm_obs = N*transform_cI(t_obs,cI_obs,delay_dist=icu_adm_distribution,frac=risk_ICU)
+ICU_discharge_obs = N*transform_cI(t_obs,cI_obs,delay_dist=icu_discharge_distribution, frac=risk_ICU)
+ICU_obs = ICU_adm_obs - ICU_discharge_obs
+
+fig1=plt.figure(figsize=(10,5))
+ax1=plt.subplot(1,1,1)
+ax1.plot(t_obs,I_obs*N, 'b-')
+ax1.set_xlabel('time(days)',fontsize=13)
+ax1.set_ylabel('number of cases', fontsize=13)
+fig1.suptitle('simulation of Covid-19 pandemic in England')
